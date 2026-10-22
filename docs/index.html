@@ -295,7 +295,7 @@ create policy "sets_delete_own" on public.sets
 
   .stat-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--sp-1);
     padding: 0 var(--sp-2) var(--sp-2);
   }
@@ -317,7 +317,7 @@ create policy "sets_delete_own" on public.sets
   }
   .stat-value {
     font-family: var(--font-mono);
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 500;
     color: var(--text-data);
     font-variant-numeric: tabular-nums;
@@ -325,7 +325,7 @@ create policy "sets_delete_own" on public.sets
 
   .day-picker {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--sp-1);
     padding: 0 var(--sp-2) var(--sp-2);
   }
@@ -759,6 +759,10 @@ create policy "sets_delete_own" on public.sets
       </div>
       <div class="stat-row">
         <div class="stat-card">
+          <span class="stat-label">This Week</span>
+          <span class="stat-value" id="stat-week">0/2</span>
+        </div>
+        <div class="stat-card">
           <span class="stat-label">Streak</span>
           <span class="stat-value" id="stat-streak">0</span>
         </div>
@@ -846,6 +850,11 @@ const ICONS = {
 // ============================================================
 // PROGRAM DATA
 // ============================================================
+// The program is now 2 days/week. Day 3 stays defined only so sessions logged
+// under the old 3-day rotation still render in History and Progress.
+const ACTIVE_DAYS = [1, 2];
+const WEEKLY_TARGET = ACTIVE_DAYS.length;
+
 const DAY_LABELS = {
   1: 'Deadlift & Pull',
   2: 'Squat & Row',
@@ -857,6 +866,7 @@ const PROGRAM = {
     { name: 'Trap Bar Deadlift', sets: 3, repTarget: '4-6', restSeconds: 120, optional: false },
     { name: 'Pull-ups', sets: 3, repTarget: '6-8', restSeconds: 120, optional: false },
     { name: 'Low Incline DB Press', sets: 3, repTarget: '8-10', restSeconds: 120, optional: false },
+    { name: 'Barbell Row', sets: 3, repTarget: '8-10', restSeconds: 120, optional: false },
     { name: 'Incline Bicep Curls', sets: 3, repTarget: '10-12', restSeconds: 60, optional: true },
     { name: 'Toes to Bar', sets: 2, repTarget: 'To failure', restSeconds: 90, optional: true },
     { name: 'Lu Lateral Raises', sets: 2, repTarget: '10-12', restSeconds: 90, optional: true },
@@ -1090,9 +1100,10 @@ function computeDerived() {
   if (existingToday) {
     state.todaySession = existingToday;
   } else {
+    // Alternate 1 -> 2 -> 1. A legacy Day 3 as the last session rolls over to Day 1.
     const dayNumber = state.sessions.length === 0
       ? 1
-      : ((state.sessions[state.sessions.length - 1].day_number % 3) + 1);
+      : (state.sessions[state.sessions.length - 1].day_number === 1 ? 2 : 1);
     state.todaySession = { id: null, date: todayStr(), day_number: dayNumber, user_id: state.user.id };
   }
   state.dayNumber = state.todaySession.day_number;
@@ -1233,25 +1244,49 @@ function renderToday() {
   updateStatsRow();
 }
 
-// A streak survives gaps of up to MAX_GAP_DAYS between sessions, since this
-// program is ~3x/week by design, not daily — a plain "consecutive days" streak
-// would break on every rest day.
-const STREAK_MAX_GAP_DAYS = 4;
-
+// The streak counts consecutive weeks (Mon-Sun) that hit WEEKLY_TARGET sessions.
+// At 2x/week, a day-gap streak would break whenever a session slips by a day,
+// whereas a weekly one only cares that both sessions happened.
 function getSessionDatesDesc() {
   return [...state.sessions].map((s) => s.date).sort((a, b) => b.localeCompare(a));
 }
 
+function weekStartStr(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function getSessionCountsByWeek() {
+  const counts = {};
+  for (const s of state.sessions) {
+    const wk = weekStartStr(s.date);
+    counts[wk] = (counts[wk] || 0) + 1;
+  }
+  return counts;
+}
+
+function computeThisWeekCount() {
+  return getSessionCountsByWeek()[weekStartStr(todayStr())] || 0;
+}
+
 function computeStreak() {
-  const dates = getSessionDatesDesc();
-  if (dates.length === 0) return 0;
-  let streak = 1;
-  for (let i = 0; i < dates.length - 1; i++) {
-    const cur = new Date(dates[i] + 'T00:00:00');
-    const prev = new Date(dates[i + 1] + 'T00:00:00');
-    const gapDays = Math.round((cur - prev) / 86400000);
-    if (gapDays <= STREAK_MAX_GAP_DAYS) streak++;
-    else break;
+  const counts = getSessionCountsByWeek();
+  const cursor = new Date(weekStartStr(todayStr()) + 'T00:00:00');
+  // The current week is still in progress, so it only adds to the streak once
+  // it hits the target; falling short so far doesn't break it.
+  let streak = 0;
+  if ((counts[weekStartStr(todayStr())] || 0) >= WEEKLY_TARGET) streak++;
+  cursor.setDate(cursor.getDate() - 7);
+  while (true) {
+    const m = String(cursor.getMonth() + 1).padStart(2, '0');
+    const day = String(cursor.getDate()).padStart(2, '0');
+    const wk = `${cursor.getFullYear()}-${m}-${day}`;
+    if ((counts[wk] || 0) < WEEKLY_TARGET) break;
+    streak++;
+    cursor.setDate(cursor.getDate() - 7);
   }
   return streak;
 }
@@ -1267,18 +1302,19 @@ function computeDaysSinceLastWorkout() {
 function formatLastWorkoutLabel(days) {
   if (days == null) return '—';
   if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
   return `${days}d ago`;
 }
 
 function updateStatsRow() {
-  document.getElementById('stat-streak').textContent = String(computeStreak());
+  document.getElementById('stat-week').textContent = `${computeThisWeekCount()}/${WEEKLY_TARGET}`;
+  const streak = computeStreak();
+  document.getElementById('stat-streak').textContent = `${streak} wk${streak === 1 ? '' : 's'}`;
   document.getElementById('stat-last').textContent = formatLastWorkoutLabel(computeDaysSinceLastWorkout());
 }
 
 function renderDayPicker() {
   const container = document.getElementById('day-picker');
-  container.innerHTML = [1, 2, 3].map((n) => {
+  container.innerHTML = ACTIVE_DAYS.map((n) => {
     const isSelected = n === state.dayNumber;
     const lastDate = state.lastPerformedByDay[n];
     const lastLabel = lastDate ? formatDateShort(lastDate) : 'Not yet';
@@ -1579,7 +1615,8 @@ function renderSessionDetail(dateStr) {
 function renderProgressView() {
   const select = document.getElementById('progress-exercise-select');
   const names = [];
-  for (const day of [1, 2, 3]) {
+  // Include legacy days so exercises only logged under the old program still chart.
+  for (const day of [...ACTIVE_DAYS, 3]) {
     for (const ex of PROGRAM[day]) {
       if (!names.includes(ex.name)) names.push(ex.name);
     }
