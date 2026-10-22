@@ -21,7 +21,7 @@ export const state = {
   dayNumber: 1,
   extraSets: {},          // exerciseName -> number of extra "+ Add Set" rows this session
   alternativeDrafts: {},  // exerciseName -> { isAlternative, note }
-  collapsedOptional: new Set(),
+  cardOverrides: {},      // exerciseName -> true/false when the user expanded/collapsed a card by hand
   lastPerformedByDay: {},
   currentView: 'today',
   calendarYear: 0,

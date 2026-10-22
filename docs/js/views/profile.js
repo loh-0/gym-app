@@ -51,10 +51,10 @@ export function renderProfile() {
       ${stat('Freezes', `${weeks.freezes}/${MAX_FREEZES}`, `<span class="stat-sub freeze">${ICONS.snowflake} 1 per ${FREEZE_EVERY_WEEKS} wks</span>`)}
       ${stat('PRs', prCount)}
       ${stat('Total volume', formatNumber(totalVolume, 0), state.unit)}
-      ${stat('Badges', `${unlockedCount}/${badges.length}`)}
+      ${stat('Achievements', `${unlockedCount}/${badges.length}`)}
     </div>
     <p class="section-note" style="margin-top:var(--sp-1)">Freezes are earned every ${FREEZE_EVERY_WEEKS} weeks you hit the weekly quest and are spent automatically on a missed week, so one bad week doesn't reset your streak.</p>
-    <h3 class="section-title">Badges</h3>
+    <h3 class="section-title">Achievements</h3>
     <div class="badge-grid">
       ${sortedBadges.map(buildBadgeHtml).join('')}
     </div>

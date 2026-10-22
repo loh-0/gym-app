@@ -2,7 +2,7 @@ import { state, notifyDataChanged } from '../state.js';
 import { PROGRAM, ACTIVE_DAYS, DAY_LABELS, WEEKLY_TARGET, QUICK_LIFT_COUNT, findExerciseInProgram } from '../program.js';
 import {
   escapeHtml, todayStr, formatDateLong, formatDateShort, formatRest, formatNumber, formatSet,
-  daysBetween, weekStartStr, showToast, ICONS,
+  formatWeekday, daysBetween, isoWeekNumber, weekStartStr, showToast, ICONS,
 } from '../utils.js';
 import { XP, setsFor, sessionCompletion, suggestProgression } from '../stats.js';
 import * as db from '../data.js';
@@ -10,7 +10,10 @@ import { startRest, stopRest, primeAudio } from '../timer.js';
 import { celebrate, floatXp } from '../fx.js';
 import { openSummary, formatPr } from './summary.js';
 
-const RING_CIRCUMFERENCE = 2 * Math.PI * 42;
+// Each card is 'done', 'focus' (the next thing to do), 'next' (a later main
+// lift) or 'optional'. Kept from the last render so we only re-render the list
+// when one of them changes.
+let cardStates = {};
 
 // ============================================================
 // ACTIVE SESSION
@@ -30,7 +33,7 @@ export function openSession(dateStr) {
     state.activeSession = { id: null, date: dateStr, day_number: dayNumber, user_id: state.user.id };
   }
   state.dayNumber = state.activeSession.day_number;
-  state.collapsedOptional = new Set(PROGRAM[state.dayNumber].filter((e) => e.optional).map((e) => e.name));
+  state.cardOverrides = {};
   computeLastPerformedByDay();
   computeExtraSetsFromExisting();
 }
@@ -74,6 +77,13 @@ function getLoggedSet(exerciseName, setNumber) {
   ) || null;
 }
 
+function getLoggedSets(exerciseName) {
+  if (!state.activeSession.id) return [];
+  return state.sets
+    .filter((s) => s.session_id === state.activeSession.id && s.exercise_name === exerciseName)
+    .sort((a, b) => a.set_number - b.set_number);
+}
+
 // Sets from the most recent earlier session that included this exercise, on
 // either day — Barbell Row progress carries across both.
 function getPriorSets(exerciseName) {
@@ -104,7 +114,7 @@ async function selectDay(dayNumber) {
   if (dayNumber === state.dayNumber) return;
   state.dayNumber = dayNumber;
   state.activeSession.day_number = dayNumber;
-  state.collapsedOptional = new Set(PROGRAM[dayNumber].filter((e) => e.optional).map((e) => e.name));
+  state.cardOverrides = {};
   computeExtraSetsFromExisting();
 
   if (state.activeSession.id) {
@@ -120,6 +130,51 @@ async function selectDay(dayNumber) {
 }
 
 // ============================================================
+// CARD STATES
+// ============================================================
+function isExerciseDone(ex) {
+  return getLoggedSets(ex.name).filter((s) => s.reps != null || s.weight != null).length >= ex.sets;
+}
+
+// The first unfinished main lift is the focus. Once every main lift is done,
+// the first unfinished optional movement takes over.
+function computeCardStates() {
+  const result = {};
+  let focusName = null;
+  for (const ex of PROGRAM[state.dayNumber]) {
+    if (isExerciseDone(ex)) {
+      result[ex.name] = 'done';
+    } else if (!ex.optional && !focusName) {
+      result[ex.name] = 'focus';
+      focusName = ex.name;
+    } else {
+      result[ex.name] = ex.optional ? 'optional' : 'next';
+    }
+  }
+  if (!focusName) {
+    const firstOptional = PROGRAM[state.dayNumber].find((ex) => result[ex.name] === 'optional');
+    if (firstOptional) result[firstOptional.name] = 'focus';
+  }
+  return result;
+}
+
+function isExpanded(ex, cardState) {
+  const override = state.cardOverrides[ex.name];
+  return override !== undefined ? override : cardState === 'focus';
+}
+
+// Re-render the list only when a card changed state (an exercise finished or
+// the focus moved), so numbers typed but not yet logged elsewhere survive.
+function refreshCardsIfStateChanged(changedExercise) {
+  const next = computeCardStates();
+  if (Object.keys(next).every((name) => next[name] === cardStates[name])) return;
+  if (next[changedExercise] === 'done' && cardStates[changedExercise] !== 'done') {
+    delete state.cardOverrides[changedExercise];
+  }
+  renderExerciseList();
+}
+
+// ============================================================
 // RENDERING
 // ============================================================
 export function renderToday() {
@@ -127,45 +182,74 @@ export function renderToday() {
   const isToday = sess.date === todayStr();
   document.getElementById('edit-banner').classList.toggle('hidden', isToday);
   document.getElementById('edit-banner-date').textContent = formatDateLong(sess.date);
-  document.getElementById('today-day-label').textContent = DAY_LABELS[state.dayNumber];
+  document.getElementById('today-day-label').textContent = `Day ${state.dayNumber} · ${DAY_LABELS[state.dayNumber]}`;
   document.getElementById('today-date-label').textContent = formatDateLong(sess.date);
-  document.getElementById('finish-btn').textContent = isToday ? 'Finish workout' : 'View session summary';
+  document.getElementById('finish-btn').textContent = isToday ? 'Complete quest' : 'View session summary';
   renderDayPicker();
-  document.getElementById('exercise-list').innerHTML = PROGRAM[state.dayNumber].map((ex) => buildExerciseCardHtml(ex)).join('');
+  renderExerciseList();
   updateProgressUi();
+}
+
+function renderExerciseList() {
+  cardStates = computeCardStates();
+  const program = PROGRAM[state.dayNumber];
+  const main = program.filter((e) => !e.optional);
+  const optional = program.filter((e) => e.optional);
+  document.getElementById('exercise-list').innerHTML =
+    main.map((ex, i) => buildExerciseCardHtml(ex, cardStates[ex.name], `Step ${i + 1}/${main.length}`)).join('') +
+    (optional.length
+      ? `<div class="optional-label"><span>Side quests</span><span>+${XP.set + XP.optionalSetBonus} XP per set</span></div>`
+      : '') +
+    optional.map((ex) => buildExerciseCardHtml(ex, cardStates[ex.name], 'Side quest')).join('');
+  updatePrBadges();
 }
 
 // Everything on the Today view that depends on derived stats, without touching
 // the set inputs.
 export function updateProgressUi() {
-  updateCompletionRing();
-  updateStatsRow();
+  updateHero();
+  updateSessionProgress();
   updateSessionStatus();
   updatePrBadges();
   document.getElementById('finish-btn').disabled = !state.activeSession.id;
 }
 
 function formatLastWorkoutLabel(days) {
-  if (days == null) return '—';
-  if (days === 0) return 'Today';
-  return `${days}d ago`;
+  if (days == null) return 'No workouts yet';
+  if (days === 0) return 'Last: today';
+  return `Last: ${days}d ago`;
 }
 
-function updateStatsRow() {
-  const weeks = state.derived.weeks;
+function updateHero() {
+  const { level, weeks, index } = state.derived;
+  document.getElementById('hero-level').textContent = String(level.level);
+  document.getElementById('hero-title').textContent = level.title;
+  document.getElementById('hero-xp-fill').style.width = `${Math.round(level.pct * 100)}%`;
+  document.getElementById('hero-xp-into').textContent = formatNumber(level.into, 0);
+  document.getElementById('hero-xp-span').textContent = formatNumber(level.span, 0);
+
   const met = weeks.currentCount >= WEEKLY_TARGET;
-  document.getElementById('stat-week').textContent = `${weeks.currentCount}/${WEEKLY_TARGET}`;
-  const weekSub = document.getElementById('stat-week-sub');
-  weekSub.className = 'stat-sub' + (met ? ' good' : '');
-  weekSub.innerHTML = met ? `${ICONS.check} Quest done` : `${WEEKLY_TARGET - weeks.currentCount} to go`;
+  document.getElementById('quest-title').textContent = `Quest · Week ${isoWeekNumber(todayStr())}`;
+  const reward = document.getElementById('quest-reward');
+  reward.textContent = met ? `Complete · +${XP.weeklyQuest} XP` : `Reward ${XP.weeklyQuest} XP`;
+  reward.classList.toggle('complete', met);
+
+  const thisWeek = index.sessionsAsc.filter((s) => weekStartStr(s.date) === weeks.currentWeek);
+  const taskCount = Math.max(WEEKLY_TARGET, thisWeek.length);
+  document.getElementById('quest-tasks').innerHTML = Array.from({ length: taskCount }, (_, i) => {
+    const sess = thisWeek[i];
+    if (sess) {
+      return `<div class="quest-task done"><span class="quest-check">${ICONS.check}</span><span>Session ${i + 1} · ${escapeHtml(formatWeekday(sess.date))} · ${escapeHtml(DAY_LABELS[sess.day_number])}</span></div>`;
+    }
+    const isLastNeeded = i === WEEKLY_TARGET - 1;
+    return `<div class="quest-task"><span class="quest-check"></span><span>Session ${i + 1}</span>${isLastNeeded ? `<em>+${XP.weeklyQuest} XP</em>` : ''}</div>`;
+  }).join('');
 
   document.getElementById('stat-streak').textContent = `${weeks.streak} wk${weeks.streak === 1 ? '' : 's'}`;
-  document.getElementById('stat-streak-sub').innerHTML = weeks.freezes > 0
-    ? `${ICONS.snowflake} ${weeks.freezes} freeze${weeks.freezes === 1 ? '' : 's'}`
+  document.getElementById('stat-freezes').textContent = weeks.freezes > 0
+    ? `${weeks.freezes} freeze${weeks.freezes === 1 ? '' : 's'}`
     : '';
-
-  const sessions = state.derived.index.sessionsAsc;
-  const last = sessions[sessions.length - 1];
+  const last = index.sessionsAsc[index.sessionsAsc.length - 1];
   document.getElementById('stat-last').textContent = formatLastWorkoutLabel(last ? daysBetween(last.date, todayStr()) : null);
 }
 
@@ -176,7 +260,7 @@ function updateSessionStatus() {
   const hasQuickOption = main.length > QUICK_LIFT_COUNT;
   el.classList.toggle('good', completion.quick);
   if (completion.full) {
-    el.textContent = 'All main lifts done. Optional sets earn bonus XP.';
+    el.textContent = 'All main lifts done. Side quests earn bonus XP.';
   } else if (completion.quick && hasQuickOption) {
     el.textContent = 'Quick session done. Finish now, or keep going for the full-session bonus.';
   } else if (hasQuickOption) {
@@ -208,27 +292,27 @@ function renderDayPicker() {
   }).join('');
 }
 
-// Main-lift sets logged vs prescribed. Extra sets beyond the prescription don't
-// inflate the ring.
-function computeCompletion() {
+// Main-lift sets logged vs prescribed, one segment per set. Extra sets beyond
+// the prescription don't count.
+function updateSessionProgress() {
   const mandatory = PROGRAM[state.dayNumber].filter((e) => !e.optional);
   const total = mandatory.reduce((sum, e) => sum + e.sets, 0);
-  const id = state.activeSession.id;
-  const logged = id
-    ? mandatory.reduce((sum, ex) => sum + Math.min(ex.sets, state.sets.filter((s) => s.session_id === id && s.exercise_name === ex.name).length), 0)
-    : 0;
-  return { logged, total };
-}
-
-function updateCompletionRing() {
-  const { logged, total } = computeCompletion();
-  const pct = total > 0 ? Math.min(1, logged / total) : 0;
-  document.querySelector('.ring-fill').style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - pct));
+  const logged = mandatory.reduce((sum, ex) => sum + Math.min(ex.sets, getLoggedSets(ex.name).length), 0);
   document.getElementById('ring-value').textContent = `${logged}/${total}`;
+  document.getElementById('session-progress').innerHTML = Array.from({ length: total }, (_, i) => `<i class="${i < logged ? 'on' : ''}"></i>`).join('');
 }
 
-function buildExerciseCardHtml(ex) {
-  const isCollapsed = ex.optional && state.collapsedOptional.has(ex.name);
+function doneSummary(ex) {
+  const sets = getLoggedSets(ex.name);
+  const weights = new Set(sets.map((s) => s.weight));
+  const reps = sets.map((s) => s.reps ?? '–').join(', ');
+  if (weights.size === 1 && sets[0].weight > 0) return `${sets.length} × ${formatNumber(sets[0].weight)} ${state.unit} · ${reps} reps`;
+  if (weights.size === 1) return `${sets.length} sets · ${reps} reps`;
+  return sets.map(formatSet).join(', ');
+}
+
+function buildExerciseCardHtml(ex, cardState, stepLabel) {
+  const expanded = isExpanded(ex, cardState);
   const suggestion = getSuggestion(ex);
   const totalSets = ex.sets + (state.extraSets[ex.name] || 0);
   const setsHtml = Array.from({ length: totalSets }, (_, i) => buildSetRowHtml(ex, i + 1, suggestion)).join('');
@@ -240,19 +324,21 @@ function buildExerciseCardHtml(ex) {
     : '';
 
   return `
-    <div class="exercise-card ${ex.optional ? 'optional' : 'mandatory'} ${isCollapsed ? 'collapsed' : ''}" data-exercise-card="${escapeHtml(ex.name)}">
-      <div class="exercise-header" ${ex.optional ? 'data-action="toggle-collapse"' : ''}>
+    <div class="exercise-card ${ex.optional ? 'optional' : 'mandatory'} is-${cardState} ${expanded ? '' : 'collapsed'}" data-exercise-card="${escapeHtml(ex.name)}">
+      <div class="exercise-header" data-action="toggle-collapse">
         <div class="exercise-title-row">
+          <span class="ex-tick">${ICONS.check}</span>
           <h3>${escapeHtml(ex.name)}</h3>
-          ${ex.optional ? '<span class="badge optional-badge">Optional</span>' : ''}
+          <span class="step-label">${escapeHtml(stepLabel)}</span>
           <span class="pr-badge hidden">PR</span>
         </div>
+        <div class="exercise-summary">${cardState === 'done' ? escapeHtml(doneSummary(ex)) : ''}</div>
         <div class="exercise-meta">
-          <span class="meta-pill"><strong>${escapeHtml(repLabel)}</strong></span>
+          <span class="meta-pill"><strong>${ex.sets} × ${escapeHtml(repLabel)}</strong></span>
           <span class="meta-pill">${formatRest(ex.restSeconds)}</span>
         </div>
         ${tipHtml}
-        ${ex.optional ? `<span class="collapse-toggle">${isCollapsed ? '▸' : '▾'}</span>` : ''}
+        <span class="collapse-toggle">${expanded ? '▾' : '▸'}</span>
       </div>
       <div class="exercise-body">
         <div class="sets-table">${setsHtml}</div>
@@ -284,10 +370,10 @@ function buildSetRowHtml(ex, setNumber, suggestion) {
   const suggestAttrs = (s.weight != null ? ` data-suggest-weight="${s.weight}"` : '') + (s.reps != null ? ` data-suggest-reps="${s.reps}"` : '');
   return `
     <div class="set-row ${logged ? 'logged' : ''}"${suggestAttrs}>
-      <span class="set-label">Set ${setNumber}</span>
+      <span class="set-label">S${setNumber}</span>
       <div class="set-inputs">
-        <input type="number" step="any" inputmode="decimal" class="input-weight" placeholder="${escapeHtml(weightPlaceholder)}" value="${weightValue}" aria-label="Weight">
-        <input type="number" inputmode="numeric" class="input-reps" placeholder="${escapeHtml(repsPlaceholder)}" value="${repsValue}" aria-label="Reps">
+        <input type="number" step="any" inputmode="decimal" class="input-weight" placeholder="${escapeHtml(weightPlaceholder)}" value="${weightValue}" aria-label="Set ${setNumber} weight">
+        <input type="number" inputmode="numeric" class="input-reps" placeholder="${escapeHtml(repsPlaceholder)}" value="${repsValue}" aria-label="Set ${setNumber} reps">
       </div>
       ${hint}
       <button class="btn-log" data-action="log-set" data-set="${setNumber}" title="${logged ? 'Logged (tap to remove)' : 'Log set'}" aria-label="${logged ? 'Remove' : 'Log'} set ${setNumber}">${ICONS.check}</button>
@@ -365,11 +451,12 @@ function announceGains(before) {
     party = true;
   }
   if (!before.weekMet && after.weekMet) {
-    showToast(`Weekly quest complete · +${XP.weeklyQuest} XP`, 'win');
+    showToast(`Quest complete · +${XP.weeklyQuest} XP`, 'win');
+    party = true;
   }
   for (const badge of d.badges) {
     if (!badge.unlocked || before.badges.has(badge.id)) continue;
-    showToast(`Badge unlocked · ${badge.name}`, 'win');
+    showToast(`Achievement unlocked · ${badge.name}`, 'win');
     party = true;
   }
   if (after.level > before.level) {
@@ -424,11 +511,16 @@ async function handleLogSet(exerciseName, setNumber, buttonEl) {
     row.classList.remove('dirty');
     buttonEl.innerHTML = ICONS.check;
     buttonEl.title = 'Logged (tap to remove)';
+    buttonEl.classList.remove('pop');
+    void buttonEl.offsetWidth; // restart the animation on a re-log
+    buttonEl.classList.add('pop');
 
     notifyDataChanged();
-    updateProgressUi();
     const after = announceGains(before);
+    // Float before any re-render detaches the button.
     floatXp(buttonEl, after.xp - before.xp);
+    refreshCardsIfStateChanged(exerciseName);
+    updateProgressUi();
     if (!logged) {
       const ex = findExerciseInProgram(state.dayNumber, exerciseName);
       if (ex && state.activeSession.date === todayStr()) startRest(ex.restSeconds, exerciseName);
@@ -460,6 +552,7 @@ async function handleRemoveSet(logged, row, buttonEl) {
     notifyDataChanged();
     const ex = findExerciseInProgram(state.dayNumber, logged.exercise_name);
     row.outerHTML = buildSetRowHtml(ex, logged.set_number, getSuggestion(ex));
+    refreshCardsIfStateChanged(logged.exercise_name);
     updateProgressUi();
     showToast('Set removed');
   } catch (err) {
@@ -479,7 +572,7 @@ function handleAddSet(exerciseName, card) {
 
 function toggleCollapse(card, exerciseName) {
   const collapsed = card.classList.toggle('collapsed');
-  if (collapsed) state.collapsedOptional.add(exerciseName); else state.collapsedOptional.delete(exerciseName);
+  state.cardOverrides[exerciseName] = !collapsed;
   card.querySelector('.collapse-toggle').textContent = collapsed ? '▸' : '▾';
 }
 

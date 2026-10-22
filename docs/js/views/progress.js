@@ -87,8 +87,8 @@ function renderProgressChart() {
 
   const ctx = canvas.getContext('2d');
   const gradient = ctx.createLinearGradient(0, 0, 0, 280);
-  gradient.addColorStop(0, 'rgba(217, 79, 30, 0.28)');
-  gradient.addColorStop(1, 'rgba(217, 79, 30, 0)');
+  gradient.addColorStop(0, 'rgba(255, 201, 77, 0.25)');
+  gradient.addColorStop(1, 'rgba(255, 201, 77, 0)');
   const monoFont = { family: "'JetBrains Mono', monospace", size: 11 };
 
   state.chartInstance = new Chart(ctx, {
@@ -98,14 +98,15 @@ function renderProgressChart() {
       datasets: [{
         label: `${exerciseName} — ${METRICS[metric].label}`,
         data: points.map((p) => Math.round(p.value * 10) / 10),
-        borderColor: '#FF6B35',
+        borderColor: '#FFC94D',
         backgroundColor: gradient,
-        pointBackgroundColor: '#FFFFFF',
-        pointBorderColor: '#D94F1E',
+        pointBackgroundColor: '#14132B',
+        pointBorderColor: '#FFC94D',
         pointBorderWidth: 2,
         pointRadius: 4,
+        pointStyle: 'rect',
         borderWidth: 2,
-        tension: 0.3,
+        tension: 0,
         fill: true,
       }],
     },
@@ -114,8 +115,8 @@ function renderProgressChart() {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#8A8A8A', font: monoFont }, grid: { color: 'rgba(255,255,255,0.04)' } },
-        y: { ticks: { color: '#8A8A8A', font: monoFont }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        x: { ticks: { color: '#9D99CF', font: monoFont }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#9D99CF', font: monoFont }, grid: { color: 'rgba(255,255,255,0.05)' } },
       },
     },
   });

@@ -80,6 +80,18 @@ export function weekStartStr(dateStr) {
   return toDateStr(d);
 }
 
+// ISO-8601 week number: weeks start Monday, and week 1 holds the year's first Thursday.
+export function isoWeekNumber(dateStr) {
+  const d = parseDate(dateStr);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+}
+
+export function formatWeekday(dateStr) {
+  return parseDate(dateStr).toLocaleDateString(undefined, { weekday: 'short' });
+}
+
 export function formatDateLong(dateStr) {
   return parseDate(dateStr).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }

@@ -2,12 +2,15 @@
 // open instead of the one after; the cache is only an offline fallback.
 // Supabase API calls and CDN scripts are deliberately left untouched so data is
 // always fetched live and writes are never intercepted.
-const CACHE_NAME = 'gym-log-v2';
+const CACHE_NAME = 'gym-log-v3';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
   './icon.svg',
+  './icon-180.png',
+  './icon-192.png',
+  './icon-512.png',
   './css/app.css',
   './js/main.js',
   './js/config.js',

@@ -78,16 +78,16 @@ create policy "sets_delete_own" on public.sets
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="theme-color" content="#0A0A0A" />
+<meta name="theme-color" content="#14132B" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Gym Log</title>
 <link rel="manifest" href="./manifest.json" />
 <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-<link rel="apple-touch-icon" href="./icon.svg" />
+<link rel="apple-touch-icon" href="./icon-180.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="./css/app.css" />
 </head>
 <body>
@@ -144,44 +144,35 @@ create policy "sets_delete_own" on public.sets
         <span>Editing <strong id="edit-banner-date"></strong></span>
         <button id="back-to-today">Back to today</button>
       </div>
-      <div class="today-hero">
+      <div class="hero">
+        <div class="card char-sheet">
+          <div class="char-avatar"><small>LV</small><b id="hero-level">1</b></div>
+          <div class="char-who">
+            <span class="char-title" id="hero-title">Apprentice</span>
+            <div class="xp-bar"><span class="xp-bar-fill" id="hero-xp-fill"></span></div>
+            <span class="xp-label"><b id="hero-xp-into">0</b> / <span id="hero-xp-span">150</span> XP to next level</span>
+          </div>
+        </div>
+        <div class="card quest-card">
+          <div class="quest-head"><b id="quest-title">Weekly quest</b><span id="quest-reward"></span></div>
+          <div id="quest-tasks"></div>
+          <div class="quest-foot">
+            <span>Streak <b class="streak" id="stat-streak">0 wks</b></span>
+            <span id="stat-last"></span>
+            <span class="freeze" id="stat-freezes"></span>
+          </div>
+        </div>
+      </div>
+      <div class="day-picker" id="day-picker"></div>
+      <div class="session-head">
         <div>
           <span class="today-eyebrow" id="today-date-label"></span>
           <h1 class="today-title" id="today-day-label">Day 1</h1>
         </div>
-        <div class="completion-ring-wrap">
-          <svg class="ring-svg" viewBox="0 0 100 100">
-            <defs>
-              <linearGradient id="ringGradient" x1="0%" y1="100%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#D94F1E"/>
-                <stop offset="100%" stop-color="#FF6B35"/>
-              </linearGradient>
-            </defs>
-            <circle class="ring-track" cx="50" cy="50" r="42"/>
-            <circle class="ring-fill" cx="50" cy="50" r="42"/>
-          </svg>
-          <div class="ring-center"><span class="ring-value" id="ring-value">0/0</span></div>
-        </div>
+        <span class="session-count" id="ring-value">0/0</span>
       </div>
-      <div class="stat-row">
-        <div class="stat-card">
-          <span class="stat-label">This Week</span>
-          <span class="stat-value" id="stat-week">0/2</span>
-          <span class="stat-sub" id="stat-week-sub"></span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Streak</span>
-          <span class="stat-value" id="stat-streak">0</span>
-          <span class="stat-sub freeze" id="stat-streak-sub"></span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Last Workout</span>
-          <span class="stat-value" id="stat-last">—</span>
-          <span class="stat-sub"></span>
-        </div>
-      </div>
+      <div class="seg-bar" id="session-progress" aria-hidden="true"></div>
       <p id="session-status" class="session-status"></p>
-      <div class="day-picker" id="day-picker"></div>
       <div id="exercise-list" class="exercise-list"></div>
       <div class="finish-wrap">
         <button id="finish-btn" class="btn btn-primary btn-block" disabled>Finish workout</button>
@@ -196,7 +187,7 @@ create policy "sets_delete_own" on public.sets
         </div>
         <div class="heatmap" id="heatmap"></div>
         <div class="heatmap-legend">
-          <span><i class="legend-swatch" style="background:var(--accent)"></i>Session</span>
+          <span><i class="legend-swatch" style="background:var(--gold)"></i>Session</span>
           <span><i class="legend-swatch" style="background:var(--success)"></i>Week hit</span>
           <span><i class="legend-swatch" style="background:var(--ice)"></i>Freeze used</span>
           <span><i class="legend-swatch" style="background:var(--miss)"></i>Missed</span>

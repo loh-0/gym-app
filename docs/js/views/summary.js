@@ -54,7 +54,7 @@ export function openSummary(sessionId, { fresh = false } = {}) {
 
   document.getElementById('summary-sheet').innerHTML = `
     <span class="today-eyebrow">${escapeHtml(formatDateLong(sess.date))} · ${escapeHtml(DAY_LABELS[sess.day_number])}</span>
-    <h2 class="today-title" id="summary-title">${fresh ? 'Workout complete' : 'Session summary'}</h2>
+    <h2 class="today-title" id="summary-title">${fresh ? 'Quest complete' : 'Session summary'}</h2>
     <span class="summary-tier ${completion.tier}">${TIER_LABELS[completion.tier]}</span>
     <div class="summary-xp">+${xp.total} XP</div>
     <div class="rules-list">
@@ -81,7 +81,7 @@ export function openSummary(sessionId, { fresh = false } = {}) {
     </div>` : ''}
     ${newBadges.length ? `
     <div class="summary-section">
-      <h4>Badges unlocked</h4>
+      <h4>Achievements unlocked</h4>
       ${newBadges.map((b) => `<div class="summary-item">${ICONS[b.icon]}<span><strong>${escapeHtml(b.name)}</strong> · ${escapeHtml(b.desc)}</span></div>`).join('')}
     </div>` : ''}
     <button class="btn btn-primary btn-block" data-action="close-summary">Done</button>`;

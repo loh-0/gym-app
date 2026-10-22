@@ -1,7 +1,7 @@
 // ============================================================
 // CELEBRATION EFFECTS
 // ============================================================
-const COLORS = ['#D94F1E', '#FF6B35', '#F5A623', '#34C471', '#FFFFFF'];
+const COLORS = ['#FFC94D', '#FFE08A', '#8B74FF', '#4FE3C1', '#FFFFFF'];
 
 function reducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -59,7 +59,7 @@ export function celebrate() {
       ctx.translate(p.x, p.y);
       ctx.rotate(p.rot);
       ctx.fillStyle = p.color;
-      ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size); // square "pixels"
       ctx.restore();
     }
     if (t < DURATION) requestAnimationFrame(frame);
